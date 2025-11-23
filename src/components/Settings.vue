@@ -3,7 +3,7 @@
     <div class="settings-wrapper">
       <h2 class="settings-title">系统设置</h2>
 
-      <el-tabs type="border-card" class="settings-tabs">
+      <el-tabs type="border-card" class="settings-tabs" v-model="activeTab">
         <!-- 交易所 API 配置 -->
         <el-tab-pane label="交易所 API" name="exchange">
           <div class="settings-section">
@@ -104,13 +104,11 @@
                     <el-radio label="deepseek" border size="large" class="model-radio">
                       <div class="model-option">
                         <strong>DeepSeek V3</strong>
-                        <span class="model-desc">推荐，性能优秀</span>
                       </div>
                     </el-radio>
                     <el-radio label="qwen3" border size="large" class="model-radio">
                       <div class="model-option">
                         <strong>Qwen 3 (通义千问)</strong>
-                        <span class="model-desc">阿里云通义千问</span>
                       </div>
                     </el-radio>
                   </el-radio-group>
@@ -131,25 +129,7 @@
                   </el-input>
                   <div class="form-hint">该 Key 将用于生成交易策略分析，请妥善保管</div>
                 </el-form-item>
-
-                <el-form-item label="风险偏好 (System Prompt 参数)">
-                  <el-slider 
-                    v-model="aiForm.riskLevel" 
-                    :marks="{
-                      0: { label: '保守', style: { color: '#10b981' } },
-                      50: { label: '稳健', style: { color: '#3b82f6' } },
-                      100: { label: '激进', style: { color: '#ef4444' } }
-                    }"
-                    :step="5"
-                    show-stops
-                  />
-                  <div class="risk-level-info">
-                    <span>当前级别: </span>
-                    <span :class="getRiskLevelClass(aiForm.riskLevel)">
-                      {{ getRiskLevelText(aiForm.riskLevel) }}
-                    </span>
-                  </div>
-                </el-form-item>
+                
               </div>
 
               <el-button 
@@ -177,6 +157,7 @@ import { CreditCard, Key, Lock, Document, Cpu, Check } from '@element-plus/icons
 import { api } from '../utils/api';
 
 const saving = ref(null);
+const activeTab = ref("exchange");
 
 const exchangeForm = reactive({
   exchange: 'binance',

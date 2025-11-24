@@ -20,6 +20,7 @@
                     placeholder="请选择交易所"
                     class="w-full"
                     size="large"
+                    @change="handleExchangeChange"
                   >
                     <el-option label="Binance (币安)" value="binance">
                       <span style="font-weight: 600;">Binance (币安)</span>
@@ -28,6 +29,14 @@
                       <span style="font-weight: 600;">OKX (欧易)</span>
                     </el-option>
                   </el-select>
+                  <div class="form-hint" v-if="exchangeConfigStatus[exchangeForm.exchange]">
+                    <el-tag 
+                      :type="exchangeConfigStatus[exchangeForm.exchange].includes('已配置') ? 'success' : 'info'" 
+                      size="small"
+                    >
+                      {{ exchangeConfigStatus[exchangeForm.exchange] }}
+                    </el-tag>
+                  </div>
                 </el-form-item>
 
                 <el-form-item label="API Key" required>
@@ -61,10 +70,11 @@
                   <div class="form-hint">必填</div>
                 </el-form-item>
 
-                <el-form-item v-if="exchangeForm.exchange === 'okx'" label="Passphrase">
+                <el-form-item v-if="exchangeForm.exchange === 'okx'" label="Passphrase" required>
                   <el-input 
                     v-model="exchangeForm.passphrase" 
                     type="password" 
+                    show-password
                     placeholder="OKX 必填"
                     clearable
                     size="large"
@@ -73,7 +83,7 @@
                       <el-icon><Document /></el-icon>
                     </template>
                   </el-input>
-                  <div class="form-hint">OKX 交易所需要 Passphrase，请妥善保管</div>
+                  <div class="form-hint">必填，OKX 交易所需要 Passphrase，请妥善保管</div>
                 </el-form-item>
               </div>
 
@@ -291,6 +301,12 @@ const exchangeForm = reactive({
   passphrase: ''
 });
 
+// 交易所配置状态
+const exchangeConfigStatus = reactive({
+  binance: '',
+  okx: ''
+});
+
 const aiForm = reactive({
   provider: 'deepseek',
   apiKey: '',
@@ -431,19 +447,52 @@ const handleDeletePrompt = async (promptName) => {
 };
 
 // 加载交易所配置
-const loadExchangeSettings = async () => {
+const loadExchangeSettings = async (exchangeType = null) => {
+  const exchange = exchangeType || exchangeForm.exchange;
   try {
-    const response = await api.getExchangeSettings();
+    const response = await api.getExchangeSettings(exchange);
     if (response.success && response.data) {
-      exchangeForm.exchange = response.data.exchange || 'binance';
-      exchangeForm.apiKey = response.data.apiKey || '';
-      exchangeForm.secretKey = response.data.secretKey || '';
-      exchangeForm.passphrase = response.data.passphrase || '';
+      // 如果是指定交易所，只更新对应交易所的表单字段
+      if (exchange === exchangeForm.exchange) {
+        exchangeForm.apiKey = response.data.apiKey || '';
+        exchangeForm.secretKey = response.data.secretKey || '';
+        exchangeForm.passphrase = response.data.passphrase || '';
+      }
+      
+      // 更新配置状态提示
+      const hasConfig = !!(response.data.apiKey && response.data.secretKey);
+      if (exchange === 'binance') {
+        exchangeConfigStatus.binance = hasConfig 
+          ? '已配置 (API Key: ' + response.data.apiKey.substring(0, 8) + '...)'
+          : '未配置';
+      } else if (exchange === 'okx') {
+        exchangeConfigStatus.okx = hasConfig 
+          ? '已配置 (API Key: ' + response.data.apiKey.substring(0, 8) + '...)'
+          : '未配置';
+      }
+    } else {
+      // 如果没有配置
+      if (exchange === 'binance') {
+        exchangeConfigStatus.binance = '未配置';
+      } else if (exchange === 'okx') {
+        exchangeConfigStatus.okx = '未配置';
+      }
     }
   } catch (error) {
-    console.error('加载交易所配置失败:', error);
+    console.error(`加载${exchange}配置失败:`, error);
     // 不显示错误，因为可能是首次使用，没有配置
+    if (exchange === 'binance') {
+      exchangeConfigStatus.binance = '未配置';
+    } else if (exchange === 'okx') {
+      exchangeConfigStatus.okx = '未配置';
+    }
   }
+};
+
+// 处理交易所切换
+const handleExchangeChange = async (newExchange) => {
+  // 切换交易所时加载对应配置
+  await loadExchangeSettings(newExchange);
 };
 
 // 加载 AI 配置
@@ -511,7 +560,7 @@ const saveToDB = async (type) => {
         duration: 3000
       });
       // 保存成功后重新加载配置（用于显示更新后的信息）
-      await loadExchangeSettings();
+      await loadExchangeSettings(exchangeForm.exchange);
     } else {
       const response = await api.saveAISettings({
         provider: aiForm.provider,
@@ -554,9 +603,13 @@ const getPromptDisplayName = (name) => {
 };
 
 // 组件挂载时加载所有配置
-onMounted(() => {
+onMounted(async () => {
   loadPromptsList();
-  loadExchangeSettings();
+  // 加载所有交易所配置状态
+  await loadExchangeSettings('binance');
+  await loadExchangeSettings('okx');
+  // 加载当前选中交易所的详细配置
+  await loadExchangeSettings(exchangeForm.exchange);
   loadAISettings();
 });
 </script>

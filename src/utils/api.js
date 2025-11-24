@@ -96,7 +96,7 @@ export const api = {
   createStrategy: (data) => post('/api/strategy/create/', data),
   
   // 设置
-  getExchangeSettings: () => get('/api/settings/exchange/get/'),
+  getExchangeSettings: (exchange = 'binance') => get(`/api/settings/exchange/get/?exchange=${exchange}`),
   saveExchangeSettings: (data) => post('/api/settings/exchange/', data),
   getAISettings: () => get('/api/settings/ai/get/'),
   saveAISettings: (data) => post('/api/settings/ai/', data),

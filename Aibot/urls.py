@@ -29,7 +29,15 @@ urlpatterns = [
     path('api/strategies/', views.api_strategies, name='api_strategies'),
     path('api/strategy/create/', views.api_strategy_create, name='api_strategy_create'),
     path('api/settings/exchange/', views.api_settings_exchange, name='api_settings_exchange'),
+    path('api/settings/exchange/get/', views.api_settings_exchange_get, name='api_settings_exchange_get'),
     path('api/settings/ai/', views.api_settings_ai, name='api_settings_ai'),
+    path('api/settings/ai/get/', views.api_settings_ai_get, name='api_settings_ai_get'),
+    
+    # Prompt API endpoints
+    path('api/prompts/', views.api_prompts_list, name='api_prompts_list'),
+    path('api/prompt/<str:prompt_name>/', views.api_prompt_get, name='api_prompt_get'),
+    path('api/prompt/', views.api_prompt_save, name='api_prompt_save'),
+    path('api/prompt/<str:prompt_name>/delete/', views.api_prompt_delete, name='api_prompt_delete'),
 ]
 
 # 开发模式下提供静态文件和媒体文件服务

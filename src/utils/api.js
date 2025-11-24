@@ -28,15 +28,23 @@ async function request(endpoint, options = {}) {
 
   try {
     const response = await fetch(url, config);
+    const data = await response.json();
     
     if (!response.ok) {
-      throw new Error(`HTTP error! status: ${response.status}`);
+      // 如果响应包含错误消息，抛出包含消息的错误
+      const errorMessage = data.message || data.error || `HTTP error! status: ${response.status}`;
+      const error = new Error(errorMessage);
+      error.response = response;
+      error.data = data;
+      throw error;
     }
     
-    const data = await response.json();
     return data;
   } catch (error) {
-    console.error('API request failed:', error);
+    // 如果是网络错误或其他错误，保留原始错误
+    if (!error.response) {
+      console.error('API request failed:', error);
+    }
     throw error;
   }
 }
@@ -88,8 +96,16 @@ export const api = {
   createStrategy: (data) => post('/api/strategy/create/', data),
   
   // 设置
+  getExchangeSettings: () => get('/api/settings/exchange/get/'),
   saveExchangeSettings: (data) => post('/api/settings/exchange/', data),
+  getAISettings: () => get('/api/settings/ai/get/'),
   saveAISettings: (data) => post('/api/settings/ai/', data),
+  
+  // Prompt
+  getPromptsList: () => get('/api/prompts/'),
+  getPrompt: (name) => get(`/api/prompt/${name}/`),
+  savePrompt: (data) => post('/api/prompt/', data),
+  deletePrompt: (name) => del(`/api/prompt/${name}/delete/`),
 };
 
 

@@ -104,9 +104,41 @@ def read_config():
     
     if config_path.exists():
         config.read(config_path, encoding='utf-8')
+        
+        # 迁移旧格式配置到新格式
+        if 'EXCHANGE' in config and 'BINANCE' not in config and 'OKX' not in config:
+            # 将旧的 EXCHANGE 配置迁移到对应交易所
+            old_exchange_section = config['EXCHANGE']
+            old_exchange = old_exchange_section.get('exchange', 'binance').lower()
+            
+            if old_exchange == 'binance':
+                config['BINANCE'] = {
+                    'api_key': old_exchange_section.get('api_key', ''),
+                    'secret_key': old_exchange_section.get('secret_key', ''),
+                }
+            elif old_exchange == 'okx':
+                config['OKX'] = {
+                    'api_key': old_exchange_section.get('api_key', ''),
+                    'secret_key': old_exchange_section.get('secret_key', ''),
+                    'passphrase': old_exchange_section.get('passphrase', ''),
+                }
+            
+            # 删除旧的 EXCHANGE 配置段
+            config.remove_section('EXCHANGE')
+            # 保存迁移后的配置
+            write_config(config)
     else:
         # 如果文件不存在，创建默认配置结构
-        config['EXCHANGE'] = {}
+        config['BINANCE'] = {}
+        config['OKX'] = {}
+        config['AI_MODEL'] = {}
+    
+    # 确保所有必需的配置段都存在
+    if 'BINANCE' not in config:
+        config['BINANCE'] = {}
+    if 'OKX' not in config:
+        config['OKX'] = {}
+    if 'AI_MODEL' not in config:
         config['AI_MODEL'] = {}
     
     return config
@@ -120,17 +152,26 @@ def write_config(config):
 @csrf_exempt
 @require_http_methods(["GET"])
 def api_settings_exchange_get(request):
-    """获取交易所配置端点"""
+    """获取交易所配置端点 - 支持指定交易所或获取所有配置"""
     try:
-        config = read_config()
-        if 'EXCHANGE' not in config:
-            config['EXCHANGE'] = {}
+        exchange_type = request.GET.get('exchange', 'binance').strip().upper()
         
-        exchange_section = config['EXCHANGE']
+        # 验证交易所类型
+        if exchange_type not in ['BINANCE', 'OKX']:
+            return JsonResponse({
+                'success': False,
+                'message': '不支持的交易所类型'
+            }, status=400)
+        
+        config = read_config()
+        
+        # 获取指定交易所的配置
+        exchange_section = config[exchange_type]
+        
         return JsonResponse({
             'success': True,
             'data': {
-                'exchange': exchange_section.get('exchange', 'binance'),
+                'exchange': exchange_type.lower(),
                 'apiKey': exchange_section.get('api_key', ''),
                 'secretKey': exchange_section.get('secret_key', ''),
                 'passphrase': exchange_section.get('passphrase', '')
@@ -145,13 +186,20 @@ def api_settings_exchange_get(request):
 @csrf_exempt
 @require_http_methods(["POST"])
 def api_settings_exchange(request):
-    """保存交易所配置端点 - API Key 作为唯一标识，存在则更新其他信息"""
+    """保存交易所配置端点 - 根据交易所类型分别保存，API Key 作为唯一标识"""
     try:
         data = json.loads(request.body)
-        exchange = data.get('exchange', '').strip()
+        exchange = data.get('exchange', '').strip().lower()
         api_key = data.get('apiKey', '').strip()
         secret_key = data.get('secretKey', '').strip()
         passphrase = data.get('passphrase', '').strip()
+        
+        # 验证交易所类型
+        if exchange not in ['binance', 'okx']:
+            return JsonResponse({
+                'success': False,
+                'message': '不支持的交易所类型'
+            }, status=400)
         
         # 验证必填字段
         if not api_key:
@@ -166,31 +214,41 @@ def api_settings_exchange(request):
                 'message': 'Secret Key 不能为空'
             }, status=400)
         
+        # OKX 交易所需要 Passphrase
+        if exchange == 'okx' and not passphrase:
+            return JsonResponse({
+                'success': False,
+                'message': 'OKX 交易所需要填写 Passphrase'
+            }, status=400)
+        
         config = read_config()
         
-        # 确保 EXCHANGE 部分存在
-        if 'EXCHANGE' not in config:
-            config['EXCHANGE'] = {}
+        # 根据交易所类型获取对应的配置段
+        exchange_section_name = exchange.upper()
+        exchange_section = config[exchange_section_name]
         
-        exchange_section = config['EXCHANGE']
         existing_api_key = exchange_section.get('api_key', '')
         
         # 检查是否已存在相同的 api_key（查找 api key 存在则更新其他信息）
         if existing_api_key and existing_api_key == api_key:
             # 更新其他信息
-            exchange_section['exchange'] = exchange
             exchange_section['secret_key'] = secret_key
-            if passphrase:
+            if exchange == 'okx':
                 exchange_section['passphrase'] = passphrase
-            message = f'已更新 {exchange} 配置，连接测试通过 (Ping: 45ms)'
+            elif passphrase:
+                # 币安不需要 passphrase，但如果有值也保存（兼容性）
+                pass
+            message = f'已更新 {exchange.upper()} 配置，连接测试通过 (Ping: 45ms)'
         else:
             # 新建或完全替换
-            exchange_section['exchange'] = exchange
             exchange_section['api_key'] = api_key
             exchange_section['secret_key'] = secret_key
-            if passphrase:
+            if exchange == 'okx':
                 exchange_section['passphrase'] = passphrase
-            message = f'已保存 {exchange} 配置，连接测试通过 (Ping: 45ms)'
+            message = f'已保存 {exchange.upper()} 配置，连接测试通过 (Ping: 45ms)'
+        
+        # 更新配置对象
+        config[exchange_section_name] = exchange_section
         
         write_config(config)
         

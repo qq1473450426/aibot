@@ -23,10 +23,10 @@
       </nav>
 
       <div class="sidebar-footer">
-        <div class="version-info">v3.0.0 Stable</div>
+        <div class="version-info">v3.0.1 Stable</div>
         <div class="connection-status">
           <span class="status-dot"></span>
-          <span>Connected: DeepSeek</span>
+          <span>@2025 此项目仅供学习参考</span>
         </div>
       </div>
     </aside>

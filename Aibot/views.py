@@ -9,6 +9,8 @@ import json
 import os
 from pathlib import Path
 import configparser
+import uuid
+import time
 
 
 @csrf_exempt
@@ -105,9 +107,8 @@ def read_config():
     if config_path.exists():
         config.read(config_path, encoding='utf-8')
         
-        # 迁移旧格式配置到新格式
+        # 迁移旧格式交易所配置到新格式
         if 'EXCHANGE' in config and 'BINANCE' not in config and 'OKX' not in config:
-            # 将旧的 EXCHANGE 配置迁移到对应交易所
             old_exchange_section = config['EXCHANGE']
             old_exchange = old_exchange_section.get('exchange', 'binance').lower()
             
@@ -123,23 +124,31 @@ def read_config():
                     'passphrase': old_exchange_section.get('passphrase', ''),
                 }
             
-            # 删除旧的 EXCHANGE 配置段
             config.remove_section('EXCHANGE')
-            # 保存迁移后的配置
+            write_config(config)
+        
+        # 迁移旧的 AI_MODEL 配置到新格式
+        if 'AI_MODEL' in config and 'DEEPSEEK' not in config and 'QWEN3' not in config:
+            ai_section = config['AI_MODEL']
+            old_provider = ai_section.get('provider', 'deepseek').lower()
+            target_section = 'DEEPSEEK' if old_provider == 'deepseek' else 'QWEN3'
+            config[target_section] = {
+                'model_api_key': ai_section.get('model_api_key', ''),
+                'risk_level': ai_section.get('risk_level', '50'),
+            }
+            config.remove_section('AI_MODEL')
             write_config(config)
     else:
         # 如果文件不存在，创建默认配置结构
         config['BINANCE'] = {}
         config['OKX'] = {}
-        config['AI_MODEL'] = {}
+        config['DEEPSEEK'] = {}
+        config['QWEN3'] = {}
     
     # 确保所有必需的配置段都存在
-    if 'BINANCE' not in config:
-        config['BINANCE'] = {}
-    if 'OKX' not in config:
-        config['OKX'] = {}
-    if 'AI_MODEL' not in config:
-        config['AI_MODEL'] = {}
+    for section in ['BINANCE', 'OKX', 'DEEPSEEK', 'QWEN3']:
+        if section not in config:
+            config[section] = {}
     
     return config
 
@@ -148,6 +157,13 @@ def write_config(config):
     config_path = get_config_path()
     with open(config_path, 'w', encoding='utf-8') as f:
         config.write(f)
+
+
+def get_plan_dir():
+    """获取策略计划目录"""
+    plan_dir = Path(settings.BASE_DIR) / 'plan'
+    plan_dir.mkdir(exist_ok=True)
+    return plan_dir
 
 @csrf_exempt
 @require_http_methods(["GET"])
@@ -268,17 +284,23 @@ def api_settings_exchange(request):
 def api_settings_ai_get(request):
     """获取 AI 配置端点"""
     try:
-        config = read_config()
-        if 'AI_MODEL' not in config:
-            config['AI_MODEL'] = {}
+        provider = request.GET.get('provider', 'deepseek').strip().lower()
+        if provider not in ['deepseek', 'qwen3']:
+            return JsonResponse({
+                'success': False,
+                'message': '不支持的 AI 提供商'
+            }, status=400)
         
-        ai_section = config['AI_MODEL']
+        config = read_config()
+        section_name = provider.upper()
+        ai_section = config[section_name]
+        
         return JsonResponse({
             'success': True,
             'data': {
-                'provider': ai_section.get('provider', 'deepseek'),
+                'provider': provider,
                 'apiKey': ai_section.get('model_api_key', ''),
-                'riskLevel': int(ai_section.get('risk_level', '50'))
+                'riskLevel': int(ai_section.get('risk_level', '50') or 50)
             }
         })
     except Exception as e:
@@ -293,9 +315,15 @@ def api_settings_ai(request):
     """保存 AI 配置端点 - Model API Key 作为唯一标识，存在则更新其他信息"""
     try:
         data = json.loads(request.body)
-        provider = data.get('provider', '').strip()
+        provider = data.get('provider', '').strip().lower()
         model_api_key = data.get('apiKey', '').strip()
         risk_level = data.get('riskLevel', 50)
+        
+        if provider not in ['deepseek', 'qwen3']:
+            return JsonResponse({
+                'success': False,
+                'message': '不支持的 AI 提供商'
+            }, status=400)
         
         # 验证必填字段
         if not model_api_key:
@@ -306,26 +334,22 @@ def api_settings_ai(request):
         
         config = read_config()
         
-        # 确保 AI_MODEL 部分存在
-        if 'AI_MODEL' not in config:
-            config['AI_MODEL'] = {}
-        
-        ai_section = config['AI_MODEL']
+        section_name = provider.upper()
+        ai_section = config[section_name]
         existing_api_key = ai_section.get('model_api_key', '')
         
         # 检查是否已存在相同的 model_api_key
         if existing_api_key and existing_api_key == model_api_key:
             # 更新其他信息
-            ai_section['provider'] = provider
             ai_section['risk_level'] = str(risk_level)
             message = f'已更新 AI 模型 {provider} 配置'
         else:
             # 新建或完全替换
-            ai_section['provider'] = provider
             ai_section['model_api_key'] = model_api_key
             ai_section['risk_level'] = str(risk_level)
             message = f'AI 模型 {provider} 配置已保存'
         
+        config[section_name] = ai_section
         write_config(config)
         
         return JsonResponse({
@@ -476,5 +500,88 @@ def api_prompt_delete(request, prompt_name):
             'success': False,
             'message': str(e)
         }, status=500)
+
+
+@csrf_exempt
+@require_http_methods(["GET"])
+def api_plans_list(request):
+    """获取策略计划列表"""
+    try:
+        plan_dir = get_plan_dir()
+        plans = []
+        for file_path in sorted(plan_dir.glob('*.json'), key=lambda f: f.stat().st_mtime, reverse=True):
+            try:
+                with open(file_path, 'r', encoding='utf-8') as f:
+                    plan_data = json.load(f)
+                    plan_data['fileName'] = file_path.name
+                    plans.append(plan_data)
+            except Exception:
+                continue
+        return JsonResponse({
+            'success': True,
+            'plans': plans
+        })
+    except Exception as e:
+        return JsonResponse({
+            'success': False,
+            'message': str(e)
+        }, status=500)
+
+
+@csrf_exempt
+@require_http_methods(["POST"])
+def api_plan_create(request):
+    """创建新的策略计划"""
+    try:
+        data = json.loads(request.body)
+        plan_type = data.get('planType', '').strip().lower()
+        name = data.get('name', '').strip()
+        exchange = data.get('exchange', '').strip().lower()
+        
+        if plan_type not in ['ai_trader', 'contract_dca']:
+            return JsonResponse({
+                'success': False,
+                'message': '无效的策略类型'
+            }, status=400)
+        
+        if not name:
+            return JsonResponse({
+                'success': False,
+                'message': '策略名称不能为空'
+            }, status=400)
+        
+        if exchange not in ['binance', 'okx']:
+            return JsonResponse({
+                'success': False,
+                'message': '不支持的交易所'
+            }, status=400)
+        
+        plan_dir = get_plan_dir()
+        plan_id = f"{plan_type}_{int(time.time())}_{uuid.uuid4().hex[:6]}"
+        file_path = plan_dir / f"{plan_id}.json"
+        
+        plan_payload = {
+            **data,
+            'id': plan_id,
+            'planType': plan_type,
+            'name': name,
+            'exchange': exchange,
+            'isRunning': False,
+            'createdAt': time.strftime('%Y-%m-%d %H:%M:%S')
+        }
+        
+        with open(file_path, 'w', encoding='utf-8') as f:
+            json.dump(plan_payload, f, ensure_ascii=False, indent=2)
+        
+        return JsonResponse({
+            'success': True,
+            'message': '策略创建成功',
+            'plan': plan_payload
+        })
+    except Exception as e:
+        return JsonResponse({
+            'success': False,
+            'message': str(e)
+        }, status=400)
 
 

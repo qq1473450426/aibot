@@ -1,166 +1,215 @@
 <template>
   <div class="strategy-container">
-    <!-- 头部 -->
     <div class="strategy-header">
       <h2 class="page-title">AI 策略中心</h2>
-      <el-button type="primary" size="large" @click="dialogVisible = true" class="create-btn">
+      <el-button type="primary" size="large" class="create-btn" @click="openCreateDialog">
         <el-icon class="mr-2"><Plus /></el-icon>
         新建策略
       </el-button>
     </div>
 
-    <!-- 策略卡片网格 -->
-    <div class="strategies-grid">
-      <el-card 
-        v-for="strategy in strategies" 
-        :key="strategy.id" 
-        class="strategy-card"
-        shadow="hover"
-        :class="{ active: strategy.active }"
-      >
-        <div class="strategy-card-header">
-          <div class="strategy-info">
-            <h3 class="strategy-name">{{ strategy.name }}</h3>
-            <div class="strategy-tags">
-              <el-tag size="small" effect="dark">{{ strategy.symbol }}</el-tag>
-              <el-tag size="small" type="info" effect="dark" class="ml-2">
-                {{ strategy.aiModel }}
-              </el-tag>
+    <el-skeleton :loading="plansLoading" animated :count="2">
+      <template #template>
+        <div class="skeleton-card"></div>
+      </template>
+      <template #default>
+        <div v-if="plans.length" class="plans-grid">
+          <el-card
+            v-for="plan in plans"
+            :key="plan.id"
+            class="plan-card"
+            shadow="hover"
+          >
+            <div class="plan-card-header">
+              <div>
+                <div class="plan-type">{{ formatPlanType(plan.planType) }}</div>
+                <h3 class="plan-name">{{ plan.name }}</h3>
+                <div class="plan-tags">
+                  <el-tag size="small" effect="dark">{{ plan.exchange?.toUpperCase() }}</el-tag>
+                  <el-tag v-if="plan.symbol" size="small" type="info" effect="dark">{{ plan.symbol }}</el-tag>
+                </div>
+              </div>
+              <div class="plan-meta">
+                <el-tag size="small" type="info">{{ plan.createdAt }}</el-tag>
+              </div>
             </div>
-          </div>
-          <el-switch 
-            v-model="strategy.active" 
-            active-text="运行" 
-            inactive-text="停止"
-            active-color="#10b981"
-          />
+            <div class="plan-card-body">
+              <template v-if="plan.planType === 'ai_trader'">
+                <div class="plan-row">
+                  <span>AI 模型</span>
+                  <strong>{{ formatAIModel(plan.aiModel) }}</strong>
+                </div>
+                <div class="plan-row" v-if="plan.promptName">
+                  <span>Prompt</span>
+                  <span>{{ plan.promptDisplayName || formatPromptName(plan.promptName) }}</span>
+                </div>
+                <div class="plan-row" v-if="plan.positionMode">
+                  <span>仓位模式</span>
+                  <span>{{ formatPositionMode(plan.positionMode) }} · {{ plan.leverage }}x</span>
+                </div>
+                <div class="plan-row" v-if="plan.amount">
+                  <span>投入金额</span>
+                  <span>{{ plan.amount }} USDT</span>
+                </div>
+              </template>
+              <template v-else>
+                <div class="plan-row">
+                  <span>仓位模式</span>
+                  <span>{{ formatPositionMode(plan.positionMode) }} · {{ plan.leverage }}x</span>
+                </div>
+                <div class="plan-row">
+                  <span>方向</span>
+                  <span>{{ formatDirection(plan.direction) }}</span>
+                </div>
+                <div class="plan-row">
+                  <span>总资金</span>
+                  <span>{{ plan.totalFunds }} USDT</span>
+                </div>
+                <div class="plan-row">
+                  <span>单次投入</span>
+                  <span>{{ plan.singleInvestment }} USDT</span>
+                </div>
+                <div class="plan-row">
+                  <span>定投间隔</span>
+                  <span>{{ plan.interval }}</span>
+                </div>
+              </template>
+            </div>
+            <div class="plan-card-footer">
+              <el-tag size="small" type="warning">未运行</el-tag>
+            </div>
+          </el-card>
         </div>
+        <el-empty v-else description="暂无策略计划">
+          <el-button type="primary" @click="openCreateDialog">新建策略</el-button>
+        </el-empty>
+      </template>
+    </el-skeleton>
 
-        <div class="strategy-stats">
-          <div class="stat-item">
-            <span class="stat-label">类型:</span>
-            <span class="stat-value">{{ strategy.type }}</span>
-          </div>
-          <div class="stat-item">
-            <span class="stat-label">当前 ROI:</span>
-            <span :class="strategy.roi > 0 ? 'roi-positive' : 'roi-negative'">
-              {{ strategy.roi > 0 ? '+' : '' }}{{ strategy.roi }}%
-            </span>
-          </div>
-          <div class="stat-item">
-            <span class="stat-label">运行时间:</span>
-            <span class="stat-value">{{ strategy.runtime }}</span>
-          </div>
-        </div>
-
-        <div class="strategy-actions">
-          <el-button size="small" plain>日志</el-button>
-          <el-button size="small" plain>配置</el-button>
-          <el-button size="small" type="danger" plain icon="Delete" circle />
-        </div>
-      </el-card>
-    </div>
-
-    <!-- 创建策略对话框 -->
-    <el-dialog 
-      v-model="dialogVisible" 
-      title="创建新 AI 策略" 
-      width="680px"
+    <el-dialog
+      v-model="dialogVisible"
+      title="新建策略计划"
+      width="720px"
       class="strategy-dialog"
       align-center
     >
-      <el-form :model="form" label-width="120px" class="strategy-form">
-        <el-tabs v-model="activeTab" class="form-tabs">
-          <el-tab-pane label="基础信息" name="base">
+      <el-tabs v-model="dialogActiveTab" class="form-tabs">
+        <el-tab-pane label="AI 交易员" name="ai">
+          <el-form label-width="120px" class="strategy-form">
             <el-form-item label="策略名称">
-              <el-input 
-                v-model="form.name" 
-                placeholder="例如: BTC 稳健定投"
-                clearable
-              />
+              <el-input v-model="aiStrategyForm.name" placeholder="例如：BTC AI 马丁" clearable />
+            </el-form-item>
+            <el-form-item label="交易所">
+              <el-select v-model="aiStrategyForm.exchange" class="w-full">
+                <el-option label="Binance (币安)" value="binance" />
+                <el-option label="OKX (欧易)" value="okx" />
+              </el-select>
+            </el-form-item>
+            <el-form-item label="仓位模式">
+              <el-radio-group v-model="aiStrategyForm.positionMode">
+                <el-radio-button label="cross">全仓</el-radio-button>
+                <el-radio-button label="isolated">逐仓</el-radio-button>
+              </el-radio-group>
+            </el-form-item>
+            <el-form-item label="杠杆倍率">
+              <el-input-number v-model="aiStrategyForm.leverage" :min="1" :max="125" :step="1" />
+              <div class="form-hint">默认 10x，可根据策略需求调整</div>
             </el-form-item>
             <el-form-item label="交易对">
-              <el-input 
-                v-model="form.symbol" 
-                placeholder="BTCUSDT"
+              <el-input
+                v-model="aiStrategyForm.symbol"
+                placeholder="例如：BTCUSDT"
                 clearable
                 style="text-transform: uppercase;"
               />
             </el-form-item>
+            <el-form-item label="投入金额 (USDT)">
+              <el-input-number v-model="aiStrategyForm.amount" :min="10" :step="10" />
+            </el-form-item>
             <el-form-item label="AI 模型">
-              <el-select v-model="form.aiModel" class="w-full" placeholder="选择 AI 模型">
-                <el-option label="DeepSeek V3 (推荐)" value="deepseek" />
-                <el-option label="Qwen 3 (通义千问)" value="qwen3" />
+              <el-select v-model="aiStrategyForm.aiModel" class="w-full">
+                <el-option label="DeepSeek V3" value="deepseek" />
+                <el-option label="Qwen 3" value="qwen3" />
               </el-select>
             </el-form-item>
-            <el-form-item label="策略类型">
-              <el-radio-group v-model="form.type">
-                <el-radio-button label="DCA">合约定投 (DCA)</el-radio-button>
-                <el-radio-button label="TREND">趋势跟踪</el-radio-button>
+            <el-form-item label="提示词 Prompt">
+              <el-select
+                v-model="aiStrategyForm.promptName"
+                class="w-full"
+                :loading="promptsLoading"
+                placeholder="选择策略提示词"
+                filterable
+                clearable
+              >
+                <el-option
+                  v-for="prompt in promptOptions"
+                  :key="prompt.name"
+                  :label="formatPromptName(prompt.name)"
+                  :value="prompt.name"
+                />
+              </el-select>
+              <div class="form-hint">可在系统设置 > 自定义 Prompt 中新增或修改提示词</div>
+            </el-form-item>
+          </el-form>
+        </el-tab-pane>
+
+        <el-tab-pane label="合约定投" name="dca">
+          <el-form label-width="120px" class="strategy-form">
+            <el-form-item label="策略名称">
+              <el-input v-model="dcaStrategyForm.name" placeholder="例如：ETH 周期定投" clearable />
+            </el-form-item>
+            <el-form-item label="交易所">
+              <el-select v-model="dcaStrategyForm.exchange" class="w-full">
+                <el-option label="Binance (币安)" value="binance" />
+                <el-option label="OKX (欧易)" value="okx" />
+              </el-select>
+            </el-form-item>
+            <el-form-item label="仓位模式">
+              <el-radio-group v-model="dcaStrategyForm.positionMode">
+                <el-radio-button label="cross">全仓</el-radio-button>
+                <el-radio-button label="isolated">逐仓</el-radio-button>
               </el-radio-group>
             </el-form-item>
-          </el-tab-pane>
-
-          <el-tab-pane label="定投/马丁参数" name="params" v-if="form.type === 'DCA'">
-            <el-alert 
-              title="风险提示：马丁策略在极端行情下风险较高" 
-              type="warning" 
-              show-icon 
-              class="mb-4" 
-              :closable="false"
-            />
-            <el-form-item label="首单金额 (U)">
-              <el-input-number 
-                v-model="form.dca.baseOrder" 
-                :min="10" 
-                :step="10"
-                controls-position="right"
+            <el-form-item label="杠杆倍率">
+              <el-input-number v-model="dcaStrategyForm.leverage" :min="1" :max="50" />
+              <div class="form-hint">默认 5x，建议根据风险偏好调整</div>
+            </el-form-item>
+            <el-form-item label="交易对">
+              <el-input
+                v-model="dcaStrategyForm.symbol"
+                placeholder="例如：ETHUSDT"
+                clearable
+                style="text-transform: uppercase;"
               />
             </el-form-item>
-            <el-form-item label="补仓倍数">
-              <el-input-number 
-                v-model="form.dca.multiplier" 
-                :step="0.1" 
-                :min="1.0"
-                :precision="1"
-                controls-position="right"
-              />
-              <div class="form-hint">例如 1.2 表示下一单金额是上一单的 1.2 倍</div>
+            <el-form-item label="总资金 (USDT)">
+              <el-input-number v-model="dcaStrategyForm.totalFunds" :min="100" :step="50" />
             </el-form-item>
-            <el-form-item label="补单间隔 (%)">
-              <el-input-number 
-                v-model="form.dca.stepScale" 
-                :step="0.1"
-                :precision="1"
-                controls-position="right"
-              />
-              <div class="form-hint">下跌多少百分比补仓</div>
+            <el-form-item label="单次投入 (USDT)">
+              <el-input-number v-model="dcaStrategyForm.singleInvestment" :min="10" :step="10" />
             </el-form-item>
-            <el-form-item label="最大补单次数">
-              <el-input-number 
-                v-model="form.dca.maxOrders" 
-                :max="10"
-                :min="1"
-                controls-position="right"
+            <el-form-item label="定投间隔">
+              <el-input
+                v-model="dcaStrategyForm.interval"
+                placeholder="例如：每 6 小时 / 每天 10:00"
+                clearable
               />
             </el-form-item>
-            <el-form-item label="止盈目标 (%)">
-              <el-input-number 
-                v-model="form.dca.takeProfit" 
-                :step="0.1"
-                :precision="1"
-                controls-position="right"
-              />
+            <el-form-item label="方向">
+              <el-radio-group v-model="dcaStrategyForm.direction">
+                <el-radio-button label="long">做多</el-radio-button>
+                <el-radio-button label="short">做空</el-radio-button>
+              </el-radio-group>
             </el-form-item>
-          </el-tab-pane>
-        </el-tabs>
-      </el-form>
+          </el-form>
+        </el-tab-pane>
+      </el-tabs>
 
       <template #footer>
         <div class="dialog-footer">
           <el-button @click="dialogVisible = false">取消</el-button>
-          <el-button type="primary" @click="createStrategy" :loading="creating">
-            创建并运行
+          <el-button type="primary" :loading="savingPlan" @click="createPlan">
+            保存策略
           </el-button>
         </div>
       </template>
@@ -170,99 +219,207 @@
 
 <script setup>
 import { ref, reactive, onMounted } from 'vue';
-import { Plus, Delete } from '@element-plus/icons-vue';
+import { Plus } from '@element-plus/icons-vue';
 import { ElMessage } from 'element-plus';
 import { api } from '../utils/api';
 
 const dialogVisible = ref(false);
-const activeTab = ref('base');
-const creating = ref(false);
+const dialogActiveTab = ref('ai');
+const savingPlan = ref(false);
 
-// Strategies Data
-const strategies = ref([]);
+const plans = ref([]);
+const plansLoading = ref(false);
 
-// Form Data
-const form = reactive({
+const promptOptions = ref([]);
+const promptsLoading = ref(false);
+
+const aiStrategyForm = reactive({
   name: '',
+  exchange: 'binance',
+  positionMode: 'cross',
+  leverage: 10,
   symbol: '',
+  amount: 100,
   aiModel: 'deepseek',
-  type: 'DCA',
-  dca: {
-    baseOrder: 20,
-    multiplier: 1.5,
-    stepScale: 2.0,
-    maxOrders: 5,
-    takeProfit: 1.5
-  }
+  promptName: ''
 });
 
-// 加载策略列表
-const loadStrategies = async () => {
+const dcaStrategyForm = reactive({
+  name: '',
+  exchange: 'binance',
+  positionMode: 'cross',
+  leverage: 5,
+  symbol: '',
+  totalFunds: 500,
+  singleInvestment: 50,
+  interval: '每天 10:00',
+  direction: 'long'
+});
+
+const loadPlans = async () => {
+  plansLoading.value = true;
   try {
-    const data = await api.getStrategies();
-    strategies.value = data.strategies || [];
+    const response = await api.getPlans();
+    plans.value = response.success ? (response.plans || []) : [];
   } catch (error) {
-    console.error('加载策略失败:', error);
-    ElMessage.error('加载策略列表失败');
+    ElMessage.error('加载策略计划失败');
+  } finally {
+    plansLoading.value = false;
   }
 };
 
-// 创建策略
-const createStrategy = async () => {
-  if (!form.name || !form.symbol) {
-    ElMessage.warning('请填写策略名称和交易对');
-    return;
-  }
-
-  creating.value = true;
+const loadPrompts = async () => {
+  promptsLoading.value = true;
   try {
-    const strategyData = {
-      id: Date.now(),
-      name: form.name || '未命名策略',
-      symbol: form.symbol.toUpperCase(),
-      type: form.type === 'DCA' ? 'Contract DCA' : 'AI Trend',
-      aiModel: form.aiModel === 'deepseek' ? 'DeepSeek' : 'Qwen3',
-      roi: 0,
-      runtime: '刚刚',
-      active: true,
-      ...form
-    };
-    
-    const response = await api.createStrategy(strategyData);
-    
+    const response = await api.getPromptsList();
     if (response.success) {
-      strategies.value.push({
-        id: strategyData.id,
-        name: strategyData.name,
-        symbol: strategyData.symbol,
-        type: strategyData.type,
-        aiModel: strategyData.aiModel,
-        roi: 0,
-        runtime: '刚刚',
-        active: true
-      });
-      dialogVisible.value = false;
-      
-      // 重置表单
-      form.name = '';
-      form.symbol = '';
-      form.aiModel = 'deepseek';
-      form.type = 'DCA';
-      activeTab.value = 'base';
-      
-      ElMessage.success(response.message || '策略创建成功，AI 开始接管交易');
+      promptOptions.value = response.prompts || [];
+      if (!aiStrategyForm.promptName && promptOptions.value.length) {
+        aiStrategyForm.promptName = promptOptions.value[0].name;
+      }
     }
   } catch (error) {
-    console.error('创建策略失败:', error);
-    ElMessage.error('创建策略失败: ' + (error.message || '网络错误'));
+    ElMessage.error('加载 Prompt 列表失败');
   } finally {
-    creating.value = false;
+    promptsLoading.value = false;
   }
 };
 
-// 组件挂载时加载数据
-onMounted(() => {
-  loadStrategies();
+const resetForms = () => {
+  dialogActiveTab.value = 'ai';
+  Object.assign(aiStrategyForm, {
+    name: '',
+    exchange: 'binance',
+    positionMode: 'cross',
+    leverage: 10,
+    symbol: '',
+    amount: 100,
+    aiModel: 'deepseek',
+    promptName: promptOptions.value[0]?.name || ''
+  });
+  Object.assign(dcaStrategyForm, {
+    name: '',
+    exchange: 'binance',
+    positionMode: 'cross',
+    leverage: 5,
+    symbol: '',
+    totalFunds: 500,
+    singleInvestment: 50,
+    interval: '每天 10:00',
+    direction: 'long'
+  });
+};
+
+const openCreateDialog = async () => {
+  resetForms();
+  dialogVisible.value = true;
+  if (!promptOptions.value.length) {
+    await loadPrompts();
+  }
+};
+
+const validateAiStrategy = () => {
+  if (!aiStrategyForm.name.trim()) {
+    ElMessage.warning('请输入策略名称');
+    return false;
+  }
+  if (!aiStrategyForm.symbol.trim()) {
+    ElMessage.warning('请输入交易对');
+    return false;
+  }
+  if (!aiStrategyForm.promptName) {
+    ElMessage.warning('请选择 Prompt');
+    return false;
+  }
+  return true;
+};
+
+const validateDcaStrategy = () => {
+  if (!dcaStrategyForm.name.trim()) {
+    ElMessage.warning('请输入策略名称');
+    return false;
+  }
+  if (!dcaStrategyForm.symbol.trim()) {
+    ElMessage.warning('请输入交易对');
+    return false;
+  }
+  if (!dcaStrategyForm.interval.trim()) {
+    ElMessage.warning('请输入定投间隔');
+    return false;
+  }
+  return true;
+};
+
+const createPlan = async () => {
+  let payload = null;
+  if (dialogActiveTab.value === 'ai') {
+    if (!validateAiStrategy()) return;
+    payload = {
+      planType: 'ai_trader',
+      name: aiStrategyForm.name.trim(),
+      exchange: aiStrategyForm.exchange,
+      positionMode: aiStrategyForm.positionMode,
+      leverage: aiStrategyForm.leverage,
+      symbol: aiStrategyForm.symbol.trim().toUpperCase(),
+      amount: Number(aiStrategyForm.amount),
+      aiModel: aiStrategyForm.aiModel,
+      promptName: aiStrategyForm.promptName,
+      promptDisplayName: formatPromptName(aiStrategyForm.promptName)
+    };
+  } else {
+    if (!validateDcaStrategy()) return;
+    payload = {
+      planType: 'contract_dca',
+      name: dcaStrategyForm.name.trim(),
+      exchange: dcaStrategyForm.exchange,
+      positionMode: dcaStrategyForm.positionMode,
+      leverage: dcaStrategyForm.leverage,
+      symbol: dcaStrategyForm.symbol.trim().toUpperCase(),
+      totalFunds: Number(dcaStrategyForm.totalFunds),
+      singleInvestment: Number(dcaStrategyForm.singleInvestment),
+      interval: dcaStrategyForm.interval.trim(),
+      direction: dcaStrategyForm.direction
+    };
+  }
+
+  savingPlan.value = true;
+  try {
+    const response = await api.createPlan(payload);
+    if (response.success) {
+      ElMessage.success(response.message || '策略保存成功');
+      dialogVisible.value = false;
+      await loadPlans();
+    }
+  } catch (error) {
+    ElMessage.error('保存策略失败: ' + (error.message || '网络错误'));
+  } finally {
+    savingPlan.value = false;
+  }
+};
+
+const formatPlanType = (type) =>
+  type === 'ai_trader' ? 'AI 交易员' : '合约定投';
+
+const formatPositionMode = (mode) =>
+  mode === 'cross' ? '全仓' : '逐仓';
+
+const formatDirection = (dir) =>
+  dir === 'long' ? '做多' : '做空';
+
+const formatAIModel = (model) =>
+  model === 'deepseek' ? 'DeepSeek' : 'Qwen3';
+
+const formatPromptName = (name) => {
+  const map = {
+    conservative: '保守型 Prompt',
+    moderate: '稳健型 Prompt',
+    aggressive: '激进型 Prompt'
+  };
+  return map[name] || name;
+};
+
+onMounted(async () => {
+  await Promise.all([loadPlans(), loadPrompts()]);
 });
 </script>
 
@@ -301,142 +458,93 @@ onMounted(() => {
   box-shadow: 0 8px 16px rgba(102, 126, 234, 0.4);
 }
 
-.strategies-grid {
+.plans-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(360px, 1fr));
   gap: 20px;
 }
 
-.strategy-card {
+.plan-card {
   border-radius: 12px;
   border: 1px solid #e5e7eb;
   transition: all 0.3s ease;
-  background: white;
 }
 
-.strategy-card:hover {
+.plan-card:hover {
   transform: translateY(-4px);
   box-shadow: 0 12px 24px rgba(0, 0, 0, 0.1);
   border-color: #667eea;
 }
 
-.strategy-card.active {
-  border-color: #10b981;
-  background: linear-gradient(to bottom, #ffffff 0%, #f0fdf4 100%);
-}
-
-.strategy-card :deep(.el-card__body) {
+.plan-card :deep(.el-card__body) {
   padding: 20px;
 }
 
-.strategy-card-header {
+.plan-card-header {
   display: flex;
   justify-content: space-between;
   align-items: flex-start;
   margin-bottom: 16px;
-  padding-bottom: 16px;
-  border-bottom: 1px solid #f3f4f6;
 }
 
-.strategy-info {
-  flex: 1;
+.plan-type {
+  font-size: 13px;
+  color: #6366f1;
+  font-weight: 600;
 }
 
-.strategy-name {
+.plan-name {
+  margin: 4px 0;
   font-size: 18px;
   font-weight: 700;
   color: #1f2937;
-  margin: 0 0 10px 0;
 }
 
-.strategy-tags {
+.plan-tags {
   display: flex;
   gap: 8px;
   flex-wrap: wrap;
 }
 
-.strategy-stats {
+.plan-card-body {
   display: flex;
   flex-direction: column;
   gap: 10px;
-  margin-bottom: 16px;
-}
-
-.stat-item {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
   font-size: 14px;
 }
 
-.stat-label {
+.plan-row {
+  display: flex;
+  justify-content: space-between;
+  color: #374151;
+}
+
+.plan-row span:first-child {
   color: #6b7280;
 }
 
-.stat-value {
-  color: #1f2937;
-  font-weight: 600;
-}
-
-.roi-positive {
-  color: #10b981;
-  font-weight: 700;
-  font-size: 15px;
-}
-
-.roi-negative {
-  color: #ef4444;
-  font-weight: 700;
-  font-size: 15px;
-}
-
-.strategy-actions {
+.plan-card-footer {
+  margin-top: 16px;
   display: flex;
   justify-content: flex-end;
-  gap: 8px;
-  padding-top: 16px;
-  border-top: 1px solid #f3f4f6;
 }
 
-/* 对话框样式 */
 .strategy-dialog :deep(.el-dialog) {
   border-radius: 12px;
 }
 
-.strategy-dialog :deep(.el-dialog__header) {
-  padding: 24px 24px 16px;
-  border-bottom: 1px solid #e5e7eb;
-}
-
-.strategy-dialog :deep(.el-dialog__title) {
-  font-size: 20px;
-  font-weight: 700;
-  color: #1f2937;
-}
-
 .strategy-dialog :deep(.el-dialog__body) {
-  padding: 24px;
+  padding: 0 24px 24px;
 }
 
-.strategy-form {
-  padding: 0;
-}
-
-.form-tabs :deep(.el-tabs__header) {
-  margin-bottom: 24px;
-}
-
-.form-tabs :deep(.el-tabs__item) {
-  font-size: 15px;
-  font-weight: 600;
-  padding: 0 24px;
+.strategy-form :deep(.el-form-item) {
+  margin-bottom: 18px;
 }
 
 .form-hint {
   font-size: 12px;
   color: #9ca3af;
   margin-top: 4px;
-  line-height: 1.5;
 }
 
 .dialog-footer {
@@ -445,20 +553,30 @@ onMounted(() => {
   gap: 12px;
 }
 
-/* 响应式 */
+.skeleton-card {
+  height: 200px;
+  border-radius: 12px;
+  background: linear-gradient(90deg, #f4f4f5 25%, #e5e7eb 37%, #f4f4f5 63%);
+  margin-bottom: 16px;
+}
+
+.form-tabs :deep(.el-tabs__header) {
+  margin-bottom: 24px;
+}
+
 @media (max-width: 768px) {
-  .strategies-grid {
-    grid-template-columns: 1fr;
-  }
-  
   .strategy-header {
     flex-direction: column;
     align-items: flex-start;
     gap: 16px;
   }
-  
+
   .create-btn {
     width: 100%;
+  }
+
+  .plans-grid {
+    grid-template-columns: 1fr;
   }
 }
 
@@ -466,15 +584,15 @@ onMounted(() => {
   margin-right: 8px;
 }
 
-.ml-2 {
-  margin-left: 8px;
-}
-
 .w-full {
   width: 100%;
 }
-
-.mb-4 {
-  margin-bottom: 16px;
-}
 </style>
+
+
+
+
+
+
+
+

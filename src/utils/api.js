@@ -98,7 +98,7 @@ export const api = {
   // 设置
   getExchangeSettings: (exchange = 'binance') => get(`/api/settings/exchange/get/?exchange=${exchange}`),
   saveExchangeSettings: (data) => post('/api/settings/exchange/', data),
-  getAISettings: () => get('/api/settings/ai/get/'),
+  getAISettings: (provider = 'deepseek') => get(`/api/settings/ai/get/?provider=${provider}`),
   saveAISettings: (data) => post('/api/settings/ai/', data),
   
   // Prompt
@@ -106,6 +106,10 @@ export const api = {
   getPrompt: (name) => get(`/api/prompt/${name}/`),
   savePrompt: (data) => post('/api/prompt/', data),
   deletePrompt: (name) => del(`/api/prompt/${name}/delete/`),
+  
+  // Plans
+  getPlans: () => get('/api/plans/'),
+  createPlan: (data) => post('/api/plan/create/', data),
 };
 
 

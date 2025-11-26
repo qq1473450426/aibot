@@ -38,6 +38,10 @@ urlpatterns = [
     path('api/prompt/<str:prompt_name>/', views.api_prompt_get, name='api_prompt_get'),
     path('api/prompt/', views.api_prompt_save, name='api_prompt_save'),
     path('api/prompt/<str:prompt_name>/delete/', views.api_prompt_delete, name='api_prompt_delete'),
+    
+    # Plans API endpoints
+    path('api/plans/', views.api_plans_list, name='api_plans_list'),
+    path('api/plan/create/', views.api_plan_create, name='api_plan_create'),
 ]
 
 # 开发模式下提供静态文件和媒体文件服务

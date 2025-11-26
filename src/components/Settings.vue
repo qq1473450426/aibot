@@ -14,7 +14,7 @@
                   交易所 API 配置
                 </h3>
                 
-                <el-form-item label="选择交易所">
+            <el-form-item label="选择交易所">
                   <el-select 
                     v-model="exchangeForm.exchange" 
                     placeholder="请选择交易所"
@@ -28,7 +28,7 @@
                     <el-option label="OKX (欧易)" value="okx">
                       <span style="font-weight: 600;">OKX (欧易)</span>
                     </el-option>
-                  </el-select>
+              </el-select>
                   <div class="form-hint" v-if="exchangeConfigStatus[exchangeForm.exchange]">
                     <el-tag 
                       :type="exchangeConfigStatus[exchangeForm.exchange].includes('已配置') ? 'success' : 'info'" 
@@ -37,7 +37,7 @@
                       {{ exchangeConfigStatus[exchangeForm.exchange] }}
                     </el-tag>
                   </div>
-                </el-form-item>
+            </el-form-item>
 
                 <el-form-item label="API Key" required>
                   <el-input 
@@ -52,7 +52,7 @@
                     </template>
                   </el-input>
                   <div class="form-hint">必填，此 Key 将作为唯一标识</div>
-                </el-form-item>
+            </el-form-item>
 
                 <el-form-item label="Secret Key" required>
                   <el-input 
@@ -68,7 +68,7 @@
                     </template>
                   </el-input>
                   <div class="form-hint">必填</div>
-                </el-form-item>
+            </el-form-item>
 
                 <el-form-item v-if="exchangeForm.exchange === 'okx'" label="Passphrase" required>
                   <el-input 
@@ -84,8 +84,8 @@
                     </template>
                   </el-input>
                   <div class="form-hint">必填，OKX 交易所需要 Passphrase，请妥善保管</div>
-                </el-form-item>
-              </div>
+            </el-form-item>
+          </div>
 
               <el-button 
                 type="primary" 
@@ -201,7 +201,7 @@
                     placeholder="请输入 Prompt 内容..."
                   />
                 </el-form-item>
-              </el-form>
+        </el-form>
               <template #footer>
                 <el-button @click="showAddPromptDialog = false">取消</el-button>
                 <el-button type="primary" @click="handleCreatePrompt" :loading="creatingPrompt">
@@ -210,7 +210,7 @@
               </template>
             </el-dialog>
           </div>
-        </el-tab-pane>
+      </el-tab-pane>
 
         <!-- AI 模型配置 -->
         <el-tab-pane label="AI 模型配置" name="ai">
@@ -222,8 +222,8 @@
                   AI 模型配置
                 </h3>
                 
-                <el-form-item label="首选 AI 模型">
-                  <el-radio-group v-model="aiForm.provider" class="model-selector">
+            <el-form-item label="首选 AI 模型">
+                  <el-radio-group v-model="aiForm.provider" class="model-selector" @change="handleAIProviderChange">
                     <el-radio label="deepseek" border size="large" class="model-radio">
                       <div class="model-option">
                         <strong>DeepSeek V3</strong>
@@ -234,8 +234,16 @@
                         <strong>Qwen 3 (通义千问)</strong>
                       </div>
                     </el-radio>
-                  </el-radio-group>
-                </el-form-item>
+              </el-radio-group>
+                  <div class="model-status">
+                    <el-tag size="small" :type="aiConfigStatus.deepseek.includes('已配置') ? 'success' : 'info'">
+                      DeepSeek：{{ aiConfigStatus.deepseek || '未配置' }}
+                    </el-tag>
+                    <el-tag size="small" :type="aiConfigStatus.qwen3.includes('已配置') ? 'success' : 'info'">
+                      Qwen3：{{ aiConfigStatus.qwen3 || '未配置' }}
+                    </el-tag>
+                  </div>
+            </el-form-item>
 
                 <el-form-item label="Model API Key" required>
                   <el-input 
@@ -251,10 +259,10 @@
                     </template>
                   </el-input>
                   <div class="form-hint">必填，此 Key 将作为唯一标识，请妥善保管</div>
-                </el-form-item>
+            </el-form-item>
 
                 
-              </div>
+           </div>
 
               <el-button 
                 type="success" 
@@ -266,10 +274,10 @@
                 <el-icon class="mr-2"><Check /></el-icon>
                 保存 AI 配置
               </el-button>
-            </el-form>
+        </el-form>
           </div>
-        </el-tab-pane>
-      </el-tabs>
+      </el-tab-pane>
+    </el-tabs>
     </div>
   </div>
 </template>
@@ -311,6 +319,11 @@ const aiForm = reactive({
   provider: 'deepseek',
   apiKey: '',
   riskLevel: 50
+});
+
+const aiConfigStatus = reactive({
+  deepseek: '',
+  qwen3: ''
 });
 
 const getRiskLevelText = (level) => {
@@ -496,18 +509,31 @@ const handleExchangeChange = async (newExchange) => {
 };
 
 // 加载 AI 配置
-const loadAISettings = async () => {
+const loadAISettings = async (provider = null, updateForm = false) => {
+  const targetProvider = provider || aiForm.provider;
   try {
-    const response = await api.getAISettings();
+    const response = await api.getAISettings(targetProvider);
     if (response.success && response.data) {
-      aiForm.provider = response.data.provider || 'deepseek';
-      aiForm.apiKey = response.data.apiKey || '';
-      aiForm.riskLevel = response.data.riskLevel || 50;
+      if (updateForm || targetProvider === aiForm.provider) {
+        aiForm.apiKey = response.data.apiKey || '';
+        aiForm.riskLevel = response.data.riskLevel || 50;
+      }
+      const hasConfig = !!response.data.apiKey;
+      aiConfigStatus[targetProvider] = hasConfig
+        ? `已配置 (${targetProvider === 'deepseek' ? 'DeepSeek' : 'Qwen3'})`
+        : '未配置';
+    } else {
+      aiConfigStatus[targetProvider] = '未配置';
     }
   } catch (error) {
-    console.error('加载 AI 配置失败:', error);
-    // 不显示错误，因为可能是首次使用，没有配置
+    console.error(`加载 ${targetProvider} 配置失败:`, error);
+    aiConfigStatus[targetProvider] = '未配置';
   }
+};
+
+const handleAIProviderChange = async (newProvider) => {
+  aiForm.provider = newProvider;
+  await loadAISettings(newProvider, true);
 };
 
 const saveToDB = async (type) => {
@@ -573,7 +599,7 @@ const saveToDB = async (type) => {
         duration: 3000
       });
       // 保存成功后重新加载配置
-      await loadAISettings();
+      await loadAISettings(aiForm.provider, true);
     }
   } catch (error) {
     loading.close();
@@ -610,7 +636,9 @@ onMounted(async () => {
   await loadExchangeSettings('okx');
   // 加载当前选中交易所的详细配置
   await loadExchangeSettings(exchangeForm.exchange);
-  loadAISettings();
+  // 加载 AI 配置状态
+  await loadAISettings('deepseek', true);
+  await loadAISettings('qwen3');
 });
 </script>
 
@@ -750,6 +778,13 @@ onMounted(async () => {
   font-size: 12px;
   color: #6b7280;
   font-weight: normal;
+}
+
+.model-status {
+  margin-top: 12px;
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
 }
 
 .form-hint {

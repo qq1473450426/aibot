@@ -1,0 +1,1 @@
+把游戏按钮模板图片放在这里，例如：battle_attack.png、battle_end.png、dialog.png、reconnect.png。建议固定游戏窗口尺寸和 UI 缩放后截图。
